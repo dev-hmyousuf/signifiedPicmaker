@@ -1,0 +1,187 @@
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { ArrowLeft, Download, RotateCw, Move, ZoomIn, ZoomOut } from 'lucide-react';
+import ImageUpload from './components/ImageUpload';
+import PhotoEditor from './components/PhotoEditor';
+import ControlPanel from './components/ControlPanel';
+import { useFaceDetection } from './hooks/useFaceDetection';
+
+export interface EditorState {
+  image: string | null;
+  glasses: {
+    position: { x: number; y: number };
+    scale: number;
+    rotation: number;
+    opacity: number;
+    visible: boolean;
+  };
+  faceDetected: boolean;
+  facePosition: { x: number; y: number; width: number; height: number } | null;
+}
+
+function App() {
+  const [editorState, setEditorState] = useState<EditorState>({
+    image: null,
+    glasses: {
+      position: { x: 300, y: 200 },
+      scale: 1,
+      rotation: 0,
+      opacity: 1,
+      visible: false
+    },
+    faceDetected: false,
+    facePosition: null
+  });
+
+  const [isExporting, setIsExporting] = useState(false);
+  const editorRef = useRef<any>(null);
+  const { detectFace, isLoading: faceDetectionLoading } = useFaceDetection();
+
+  const handleImageUpload = useCallback(async (imageUrl: string) => {
+    setEditorState(prev => ({
+      ...prev,
+      image: imageUrl,
+      glasses: { ...prev.glasses, visible: false }
+    }));
+
+    // Detect face after image upload
+    try {
+      const faceData = await detectFace(imageUrl);
+      if (faceData) {
+        setEditorState(prev => ({
+          ...prev,
+          faceDetected: true,
+          facePosition: faceData,
+          glasses: {
+            ...prev.glasses,
+            position: {
+              x: faceData.x + faceData.width / 2,
+              y: faceData.y + faceData.height * 0.4
+            },
+            visible: true
+          }
+        }));
+      }
+    } catch (error) {
+      console.error('Face detection failed:', error);
+    }
+  }, [detectFace]);
+
+  const handleGlassesUpdate = useCallback((updates: Partial<EditorState['glasses']>) => {
+    setEditorState(prev => ({
+      ...prev,
+      glasses: { ...prev.glasses, ...updates }
+    }));
+  }, []);
+
+  const handleAddGlasses = useCallback(() => {
+    setEditorState(prev => ({
+      ...prev,
+      glasses: { ...prev.glasses, visible: true }
+    }));
+  }, []);
+
+  const handleExport = useCallback(async () => {
+    if (!editorRef.current) return;
+    
+    setIsExporting(true);
+    try {
+      const dataUrl = await editorRef.current.exportImage();
+      
+      const link = document.createElement('a');
+      link.download = 'signglasses-photo.png';
+      link.href = dataUrl;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Export failed:', error);
+    } finally {
+      setIsExporting(false);
+    }
+  }, []);
+
+  const handleReset = useCallback(() => {
+    setEditorState({
+      image: null,
+      glasses: {
+        position: { x: 300, y: 200 },
+        scale: 1,
+        rotation: 0,
+        opacity: 1,
+        visible: false
+      },
+      faceDetected: false,
+      facePosition: null
+    });
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-green-400 via-green-500 to-green-600">
+      {/* Header */}
+      <header className="bg-white/10 backdrop-blur-sm border-b border-white/20">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={handleReset}
+              className="flex items-center space-x-2 text-white hover:text-orange-200 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5" />
+              <span className="font-medium">Back</span>
+            </button>
+          </div>
+          
+          {editorState.image && (
+            <button
+              onClick={handleExport}
+              disabled={isExporting}
+              className="flex items-center space-x-2 px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-full font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+            >
+              <Download className="w-5 h-5" />
+              <span>{isExporting ? 'Exporting...' : 'Download'}</span>
+            </button>
+          )}
+        </div>
+      </header>
+
+      <div className="max-w-6xl mx-auto p-4">
+        {!editorState.image ? (
+          <div className="flex flex-col items-center justify-center min-h-[70vh]">
+            <div className="text-center mb-8">
+              <div className="w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <div className="text-2xl">🕶️</div>
+              </div>
+              <h1 className="text-4xl font-bold text-white mb-2">SignGlasses Maker</h1>
+              <p className="text-white/80 text-lg">
+                Upload your profile picture and put on our Sign Orange Sunglasses!
+              </p>
+            </div>
+            <ImageUpload onImageUpload={handleImageUpload} />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            {/* Photo Editor */}
+            <div className="lg:col-span-3">
+              <PhotoEditor
+                ref={editorRef}
+                editorState={editorState}
+                onGlassesUpdate={handleGlassesUpdate}
+                faceDetectionLoading={faceDetectionLoading}
+              />
+            </div>
+
+            {/* Control Panel */}
+            <div className="lg:col-span-1">
+              <ControlPanel
+                editorState={editorState}
+                onGlassesUpdate={handleGlassesUpdate}
+                onAddGlasses={handleAddGlasses}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default App;

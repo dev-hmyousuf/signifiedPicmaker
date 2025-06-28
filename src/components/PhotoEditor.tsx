@@ -11,6 +11,7 @@ interface PhotoEditorProps {
 const PhotoEditor = forwardRef<any, PhotoEditorProps>(
   ({ editorState, onGlassesUpdate, faceDetectionLoading }, ref) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const fabricRef = useRef<fabric.Canvas | null>(null);
     const backgroundRef = useRef<fabric.Image | null>(null);
     const glassesRef = useRef<fabric.Image | null>(null);
@@ -26,22 +27,60 @@ const PhotoEditor = forwardRef<any, PhotoEditorProps>(
       },
     }));
 
-    // Initialize canvas
+    // Initialize and resize canvas
     useEffect(() => {
-      if (!canvasRef.current) return;
+      if (!canvasRef.current || !containerRef.current) return;
+
+      const container = containerRef.current;
+      const width = container.clientWidth;
+      const height = container.clientHeight;
 
       const canvas = new fabric.Canvas(canvasRef.current, {
-        width: 600,
-        height: 600,
+        width,
+        height,
         backgroundColor: "#f3f4f6",
         selection: false,
+        enableRetinaScaling: true,
       });
 
       fabricRef.current = canvas;
 
+      // Resize observer
+      const resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const { width, height } = entry.contentRect;
+          canvas.setDimensions({ width, height });
+          canvas.renderAll();
+
+          if (backgroundRef.current) {
+            const scale = Math.min(
+              width / backgroundRef.current.width!,
+              height / backgroundRef.current.height!
+            );
+
+            backgroundRef.current.set({
+              scaleX: scale,
+              scaleY: scale,
+              left: width / 2,
+              top: height / 2,
+            });
+
+            canvas.requestRenderAll();
+          }
+
+          if (glassesRef.current) {
+            glassesRef.current.setCoords();
+            canvas.renderAll();
+          }
+        }
+      });
+
+      resizeObserver.observe(container);
+
       return () => {
         canvas.dispose();
         fabricRef.current = null;
+        resizeObserver.disconnect();
       };
     }, []);
 
@@ -53,20 +92,16 @@ const PhotoEditor = forwardRef<any, PhotoEditorProps>(
         editorState.image,
         (img) => {
           const canvas = fabricRef.current!;
-          const canvasWidth = canvas.getWidth();
-          const canvasHeight = canvas.getHeight();
+          const width = canvas.getWidth();
+          const height = canvas.getHeight();
 
-          // Calculate scale to fit image in canvas while maintaining aspect ratio
-          const scale = Math.min(
-            canvasWidth / img.width!,
-            canvasHeight / img.height!
-          );
+          const scale = Math.min(width / img.width!, height / img.height!);
 
           img.set({
             scaleX: scale,
             scaleY: scale,
-            left: canvasWidth / 2,
-            top: canvasHeight / 2,
+            left: width / 2,
+            top: height / 2,
             originX: "center",
             originY: "center",
             selectable: false,
@@ -95,18 +130,9 @@ const PhotoEditor = forwardRef<any, PhotoEditorProps>(
         return;
       }
 
-      // REPLACE THIS URL WITH YOUR CUSTOM GLASSES PNG
-      // Option 1: Place your PNG in the public folder and reference it like this:
       const customGlassesUrl = "/custom-glasses.png";
 
-      // Option 2: Use an external URL:
-      // const customGlassesUrl = 'https://your-domain.com/path-to-your-glasses.png';
-
-      // Option 3: Use a base64 encoded image:
-      // const customGlassesUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...';
-
       if (glassesRef.current) {
-        // Update existing glasses
         const glasses = glassesRef.current;
         glasses.set({
           left: editorState.glasses.position.x,
@@ -118,17 +144,32 @@ const PhotoEditor = forwardRef<any, PhotoEditorProps>(
         });
         fabricRef.current.renderAll();
       } else {
-        // Create new glasses with your custom PNG
         fabric.Image.fromURL(
           customGlassesUrl,
           (img) => {
+            const canvas = fabricRef.current!;
+            const canvasWidth = canvas.getWidth();
+            const canvasHeight = canvas.getHeight();
+
+            // Dynamic default scale (30% of canvas width)
+            const targetWidth = canvasWidth;
+            const scale = targetWidth / img.width!;
+
+            const posX = editorState.glasses.position.x || canvasWidth / 2;
+            const posY = editorState.glasses.position.y || canvasHeight / 2;
+            const rotation = editorState.glasses.rotation || 0;
+            const opacity =
+              editorState.glasses.opacity !== undefined
+                ? editorState.glasses.opacity
+                : 1;
+
             img.set({
-              left: editorState.glasses.position.x,
-              top: editorState.glasses.position.y,
-              scaleX: editorState.glasses.scale,
-              scaleY: editorState.glasses.scale,
-              angle: editorState.glasses.rotation,
-              opacity: editorState.glasses.opacity,
+              left: posX,
+              top: posY,
+              scaleX: editorState.glasses.scale || scale,
+              scaleY: editorState.glasses.scale || scale,
+              angle: rotation,
+              opacity: opacity,
               originX: "center",
               originY: "center",
               hasControls: true,
@@ -141,11 +182,10 @@ const PhotoEditor = forwardRef<any, PhotoEditorProps>(
               transparentCorners: false,
             });
 
-            fabricRef.current?.add(img);
+            canvas.add(img);
             glassesRef.current = img;
-            fabricRef.current?.renderAll();
+            canvas.renderAll();
 
-            // Handle glasses movement
             img.on("moving", () => {
               onGlassesUpdate({
                 position: { x: img.left!, y: img.top! },
@@ -172,32 +212,31 @@ const PhotoEditor = forwardRef<any, PhotoEditorProps>(
     }, [editorState.glasses, onGlassesUpdate]);
 
     return (
-      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-white flex items-center space-x-2">
-            <div className="w-5 h-5 bg-orange-500 rounded" />
+      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 md:p-6 border border-white/20 w-full">
+        <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-2">
+          <h2 className="text-lg md:text-xl font-semibold text-white flex items-center space-x-2">
+            <div className="w-4 h-4 md:w-5 md:h-5 bg-orange-500 rounded" />
             <span>Photo Editor</span>
           </h2>
           {faceDetectionLoading && (
-            <div className="flex items-center space-x-2 text-orange-300">
-              <div className="w-4 h-4 border-2 border-orange-300 border-t-transparent rounded-full animate-spin" />
-              <span className="text-sm">Detecting face...</span>
+            <div className="flex items-center space-x-2 text-orange-300 text-sm">
+              <div className="w-3 h-3 border-2 border-orange-300 border-t-transparent rounded-full animate-spin" />
+              <span>Detecting face...</span>
             </div>
           )}
         </div>
 
         <div className="flex justify-center">
-          <div className="border-2 border-white/30 rounded-lg overflow-hidden shadow-2xl bg-white">
-            <canvas
-              ref={canvasRef}
-              className="block"
-              style={{ maxWidth: "100%", height: "auto" }}
-            />
+          <div
+            ref={containerRef}
+            className="border-2 border-white/30 rounded-lg overflow-hidden shadow-2xl bg-white w-full aspect-square max-w-[600px]"
+          >
+            <canvas ref={canvasRef} className="w-full h-full" />
           </div>
         </div>
 
-        <div className="mt-4 text-center">
-          <p className="text-white/70 text-sm">
+        <div className="mt-3 md:mt-4 text-center">
+          <p className="text-white/70 text-xs md:text-sm">
             {editorState.faceDetected
               ? "Face detected! Glasses positioned automatically."
               : "Drag and resize the glasses to fit your face."}
@@ -209,5 +248,4 @@ const PhotoEditor = forwardRef<any, PhotoEditorProps>(
 );
 
 PhotoEditor.displayName = "PhotoEditor";
-
 export default PhotoEditor;

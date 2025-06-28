@@ -127,32 +127,42 @@ function App() {
       {/* Header */}
       <header className="bg-white/10 backdrop-blur-sm border-b border-white/20">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+          {/* Left: Images */}
           <button
             onClick={handleReset}
             className="flex items-center space-x-3 text-white hover:text-orange-200 transition-colors"
+            aria-label="Reset editor"
           >
-            {/* Image container with rounded full and flex row */}
             <div className="flex overflow-hidden rounded-lg border-2 border-orange-500 shadow-lg">
               <img
                 src={Signify}
                 alt="Signify"
                 className="h-16 w-16 object-cover"
+                draggable={false}
               />
-              <img src={athex} alt="Athex" className="h-16 w-16 object-cover" />
+              <img
+                src={athex}
+                alt="Athex"
+                className="h-16 w-16 object-cover"
+                draggable={false}
+              />
             </div>
-
-            
           </button>
-          <span className="font-mono text-lg text-white">Signify Glass Maker</span>
 
+          {/* Center: Title */}
+          <h1 className="text-white text-xl font-semibold absolute left-1/2 transform -translate-x-1/2 pointer-events-none select-none">
+            Signify Glass Maker
+          </h1>
+
+          {/* Right: Download button */}
           {editorState.image && (
             <button
               onClick={handleExport}
               disabled={isExporting}
-              className="flex items-center space-x-2 px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-full font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+              className="flex items-center space-x-2 p-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
             >
               <Download className="w-5 h-5" />
-              <span>{isExporting ? "Exporting..." : "Download"}</span>
+              
             </button>
           )}
         </div>
